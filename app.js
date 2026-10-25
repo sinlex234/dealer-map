@@ -94,7 +94,7 @@ function render() {
       ${fut ? `<div class="units" role="group" aria-label="Show levels in">
         <button type="button" data-u="fut" aria-pressed="${S.units === 'fut'}">${esc(d.futSym)} points</button>
         <button type="button" data-u="base" aria-pressed="${S.units === 'base'}">${esc(d.base)} points</button></div>` : ''}
-      <span class="stamp">Options as of ${when ? esc(fmtTime(d.asof)) : 'last update'} · 15 min delay</span>
+      <span class="stamp">CBOE data, about 15 min delayed · updated ${esc(new Date(d.updated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span>
     </div>
   </div>
 
