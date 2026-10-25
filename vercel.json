@@ -1,0 +1,14 @@
+{
+  "builds": [
+    { "src": "gex.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "app.js", "use": "@vercel/static" },
+    { "src": "app.css", "use": "@vercel/static" },
+    { "src": "icon.svg", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/gex", "dest": "/gex.js" },
+    { "src": "/(app\\.js|app\\.css|icon\\.svg)", "dest": "/$1" },
+    { "src": "/.*", "dest": "/index.html" }
+  ]
+}
