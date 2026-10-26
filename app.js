@@ -48,7 +48,7 @@ async function load(t, quiet) {
     const r = await fetch('/api/gex?t=' + encodeURIComponent(t));
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'The data service didn\'t answer.');
-    S.d = d; S.t = d.t;
+    S.d = d; S.t = d.t; S.loadedAt = Date.now();
     render();
   } catch (e) {
     if (quiet && S.d) return; // keep the last good picture
@@ -78,7 +78,6 @@ function render() {
   const L = d.levels;
   const reg = d.regime === 'positive';
   document.title = `${d.t} gamma levels | Dealer Map`;
-  const when = d.asof ? new Date(d.asof.replace(' ', 'T') + 'Z') : null;
 
   main.innerHTML = `
   <div class="head">
@@ -94,9 +93,10 @@ function render() {
       ${fut ? `<div class="units" role="group" aria-label="Show levels in">
         <button type="button" data-u="fut" aria-pressed="${S.units === 'fut'}">${esc(d.futSym)} points</button>
         <button type="button" data-u="base" aria-pressed="${S.units === 'base'}">${esc(d.base)} points</button></div>` : ''}
-      <span class="stamp">CBOE data, about 15 min delayed · updated ${esc(new Date(d.updated).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</span>
     </div>
   </div>
+
+  <div class="status" id="status" aria-live="polite"></div>
 
   <div class="levels">
     ${lvCard('Gamma flip', L.flip, 'flip', L.flip ? pct(L.flip) : 'No flip within ±10%')}
@@ -197,18 +197,12 @@ function render() {
 
   bind();
   draw();
+  renderStatus();
 }
 
 function lvlPrice() { return lvl(price() / conv()); }
 function lvCard(name, v, cls, sub) {
   return `<div class="lv ${cls}"><small>${name}</small><b>${lvl(v)}</b><span>${sub}</span></div>`;
-}
-function fmtTime(s) {
-  // CBOE gives New York time without a zone
-  const [dpart, tpart] = s.split(' ');
-  const [y, m, d] = dpart.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d, 12));
-  return `${dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}, ${tpart.slice(0, 5)} ET`;
 }
 
 function reads() {
@@ -398,12 +392,57 @@ document.getElementById('themeBtn').onclick = () => {
 };
 addEventListener('popstate', () => { S.t = new URLSearchParams(location.search).get('t') || 'NQ'; nav(); load(S.t); });
 
-// refresh every minute while the page is visible
+// ---------- market clock (New York time) ----------
+// NYSE full-day holidays; options don't trade on these days
+const HOLIDAYS = new Set(['2026-01-01','2026-01-19','2026-02-16','2026-04-03','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-11-26','2026-12-25',
+  '2027-01-01','2027-01-18','2027-02-15','2027-03-26','2027-05-31','2027-06-18','2027-07-05','2027-09-06','2027-11-25','2027-12-24']);
+const NYF = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+function nyNow(t = Date.now()) {
+  const p = Object.fromEntries(NYF.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+  return { day: new Date(Date.UTC(+p.year, +p.month - 1, +p.day, 12)), mins: +p.hour * 60 + +p.minute };
+}
+const dayKey = (d) => d.toISOString().slice(0, 10);
+const isTradingDay = (d) => d.getUTCDay() % 6 !== 0 && !HOLIDAYS.has(dayKey(d));
+const shiftDay = (d, n) => new Date(d.getTime() + n * 864e5);
+function stepTradingDay(d, dir) { let x = shiftDay(d, dir); while (!isTradingDay(x)) x = shiftDay(x, dir); return x; }
+const dayName = (d) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+function session() {
+  const { day, mins } = nyNow();
+  const td = isTradingDay(day);
+  const open = td && mins >= 570 && mins < 960;            // 9:30 AM to 4:00 PM ET
+  const before = td && mins < 570;
+  const levelsFor = td && mins < 960 ? day : stepTradingDay(day, 1);
+  const lastClose = td && mins >= 960 ? day : stepTradingDay(day, -1);
+  return { open, before, levelsFor, lastClose, today: day };
+}
+const etTime = (t) => new Date(t).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) + ' ET';
+const every = () => (session().open ? 60e3 : 5 * 60e3);   // data only changes while options trade
+
+function renderStatus() {
+  const el = document.getElementById('status');
+  if (!el || !S.d) return;
+  const s = session();
+  const isToday = dayKey(s.levelsFor) === dayKey(s.today);
+  const left = Math.max(0, Math.round(((S.loadedAt || Date.now()) + every() - Date.now()) / 1000));
+  const mm = Math.floor(left / 60), ss = String(left % 60).padStart(2, '0');
+  el.innerHTML = `
+    <span class="pill ${s.open ? 'pos' : ''} live">${s.open ? 'Options market open' : 'Options market closed'}</span>
+    <span><b>Levels for</b> ${isToday ? 'today, ' : ''}${esc(dayName(s.levelsFor))}</span>
+    <span><b>Data from</b> ${s.open ? 'today, about 15 min delayed' : `${esc(dayName(s.lastClose))} close`}</span>
+    <span><b>Updated</b> ${esc(etTime(S.loadedAt || Date.now()))} · next check in ${mm}:${ss}</span>
+    ${s.open ? '' : `<span class="faint">${s.before ? 'Opens 9:30 AM ET today' : `Opens ${esc(dayName(stepTradingDay(s.today, 1)))}, 9:30 AM ET`}. Open interest updates overnight, so the levels can shift at the open.</span>`}`;
+}
+
+// one clock: redraw the status every second, reload when it's time
 function tick() {
   clearInterval(S.timer);
-  S.timer = setInterval(() => { if (!document.hidden && S.d) load(S.t, true); }, 60e3);
+  S.timer = setInterval(() => {
+    if (document.hidden || !S.d) return;
+    if (Date.now() - (S.loadedAt || 0) >= every()) { S.loadedAt = Date.now(); load(S.t, true); }
+    renderStatus();
+  }, 1000);
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.d) load(S.t, true); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.d && Date.now() - (S.loadedAt || 0) >= every()) load(S.t, true); });
 
 S.t = (new URLSearchParams(location.search).get('t') || 'NQ').toUpperCase();
 nav(); load(S.t); tick();

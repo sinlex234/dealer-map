@@ -133,6 +133,9 @@ details.how dd{margin:0;color:var(--ink-2)}
 .foot{border-top:1px solid var(--rule);padding-top:18px;padding-bottom:40px;font-size:12.5px;color:var(--ink-3)}
 .foot p{max-width:100ch;margin:0}
 .stamp{font:12px var(--mono);color:var(--ink-3)}
+.status{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;font-size:13px;color:var(--ink-2);padding:10px 14px;border:1px solid var(--rule);border-radius:var(--r);background:var(--panel)}
+.status b{font-weight:500;color:var(--ink-3);font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-family:var(--mono);margin-right:6px}
+.status .faint{color:var(--ink-3);flex-basis:100%;font-size:12.5px}
 
 @media (max-width:1060px){.levels{grid-template-columns:repeat(3,minmax(0,1fr))}.lv:nth-child(4){border-left:0}.lv:nth-child(n+4){border-top:1px solid var(--rule)}}
 @media (max-width:860px){.grid2,.reads,.export{grid-template-columns:minmax(0,1fr)}.plot{height:440px}details.how dl{grid-template-columns:minmax(0,1fr)}}
